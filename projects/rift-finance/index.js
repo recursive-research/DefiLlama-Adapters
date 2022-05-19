@@ -18,23 +18,9 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
   const balances = {};
   const transform = await getChainTransform(chain);
 
-  const { core, startBlock } = ADDRESSES[chain];
+  const vaults = ADDRESSES[chain];
 
-  // Get all registered vaults by searching events on core address.
-  const vaultRegisteredEvents = (
-    await sdk.api.util.getLogs({
-      chain,
-      keys: [],
-      toBlock: block,
-      fromBlock: startBlock,
-      target: core,
-      topic: "VaultRegistered(address,address)",
-    })
-  ).output;
-
-  const vaults = vaultRegisteredEvents.map((log) => `0x${log.topics[1].substring(26)}`);
-
-  for (const vault of vaults) {
+  for (const { vault, masterChef } of vaults) {
     // Get addresses.
     const token0 = (
       await sdk.api.abi.call({
@@ -108,7 +94,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
     );
 
     // Look for MasterChef balance.
-    try {
+    if (masterChef) {
       const rewarder = (
         await sdk.api.abi.call({
           chain,
@@ -147,7 +133,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
         chain,
         transform
       );
-    } catch (e) {}
+    }
   }
 
   return balances;
