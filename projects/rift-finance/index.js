@@ -3,6 +3,7 @@ const sdk = require("@defillama/sdk");
 const { getBlock } = require("../helper/getBlock");
 const { unwrapUniswapLPs } = require("../helper/unwrapLPs");
 const { getChainTransform } = require("../helper/portedTokens");
+const { request, gql } = require("graphql-request");
 
 const ADDRESSES = require("./addresses");
 
@@ -18,47 +19,42 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
   const balances = {};
   const transform = await getChainTransform(chain);
 
-  const { core, startBlock } = ADDRESSES[chain];
+  const { coreAddress, startBlock, graphUrl } = ADDRESSES[chain];
+  const query = gql`
+  query get_vaults($block: Int){
+    core(
+      id: "0x5D7e616B2c0bf268494A482e315a60814F97dBC8"
+      block: {number: $block},
+    ) {
+      vaults {
+        id
+        vaultType
+        token0 {
+          id
+        }
+        token1 {
+          id
+        }
+      }
+    }
+  }
+  `
 
-  // Get all registered vaults by searching events on core address.
-  const vaultRegisteredEvents = (
-    await sdk.api.util.getLogs({
-      chain,
-      keys: [],
-      toBlock: block,
-      fromBlock: startBlock,
-      target: core,
-      topic: "VaultRegistered(address,address)",
-    })
-  ).output;
+  const core = await request(
+    graphUrl,
+    query,
+    {
+      block: block,
+    }
+  );
 
-  const vaults = vaultRegisteredEvents.map((log) => `0x${log.topics[1].substring(26)}`);
-
-  for (const vault of vaults) {
-    // Get addresses.
-    const token0 = (
-      await sdk.api.abi.call({
-        abi: getAbi(riftVaultAbi, "token0"),
-        chain,
-        target: vault,
-        block,
-      })
-    ).output;
-
-    const token1 = (
-      await sdk.api.abi.call({
-        chain,
-        block,
-        target: vault,
-        abi: getAbi(riftVaultAbi, "token1"),
-      })
-    ).output;
+  for (const vault of core.vaults) {
 
     const pair = (
       await sdk.api.abi.call({
         chain,
         block,
-        target: vault,
+        target: vault.id,
         abi: getAbi(riftVaultAbi, "pair"),
       })
     ).output;
@@ -68,9 +64,9 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
       await sdk.api.abi.call({
         chain,
         block,
-        target: token0,
+        target: vault.token0.id,
         abi: "erc20:balanceOf",
-        params: [vault],
+        params: [vault.id],
       })
     ).output;
 
@@ -78,9 +74,9 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
       await sdk.api.abi.call({
         chain,
         block,
-        target: token1,
+        target: vault.token1.id,
         abi: "erc20:balanceOf",
-        params: [vault],
+        params: [vault.id],
       })
     ).output;
 
@@ -90,13 +86,13 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
         block,
         target: pair,
         abi: "erc20:balanceOf",
-        params: [vault],
+        params: [vault.id],
       })
     ).output;
 
     // Add token balances.
-    sdk.util.sumSingleBalance(balances, transform(token0), token0Bal);
-    sdk.util.sumSingleBalance(balances, transform(token1), token1Bal);
+    sdk.util.sumSingleBalance(balances, transform(vault.token0.id), token0Bal);
+    sdk.util.sumSingleBalance(balances, transform(vault.token1.id), token1Bal);
 
     // Unwrap and add pair balances.
     await unwrapUniswapLPs(
@@ -108,12 +104,12 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
     );
 
     // Look for MasterChef balance.
-    try {
+    if (vault.vaultType === 'SUSHI_SWAP') {
       const rewarder = (
         await sdk.api.abi.call({
           chain,
           block,
-          target: vault,
+          target: vault.id,
           abi: getAbi(riftVaultAbi, "rewarder"),
           params: [],
         })
@@ -123,7 +119,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
         await sdk.api.abi.call({
           chain,
           block,
-          target: vault,
+          target: vault.id,
           abi: getAbi(riftVaultAbi, "pid"),
           params: [],
         })
@@ -135,7 +131,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
           block,
           target: rewarder,
           abi: getAbi(masterChefAbi, "userInfo"),
-          params: [pid, vault],
+          params: [pid, vault.id],
         })
       ).output;
 
@@ -147,7 +143,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
         chain,
         transform
       );
-    } catch (e) {}
+    }
   }
 
   return balances;
@@ -157,10 +153,18 @@ async function aurora(timestamp, block, chainBlocks) {
   return getChainBalances(timestamp, chainBlocks, "aurora");
 }
 
+
+async function ethereum(timestamp, block, chainBlocks) {
+  return getChainBalances(timestamp, chainBlocks, "ethereum");
+}
+
 module.exports = {
   timetravel: true,
   misrepresentedTokens: false,
   aurora: {
     tvl: aurora,
+  },
+  ethereum: {
+    tvl: ethereum,
   },
 };
