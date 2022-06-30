@@ -14,21 +14,26 @@ function getAbi(obj, fnName) {
   return obj.find((x) => x.name === fnName);
 }
 
+function addressToId(address) {
+  return address.toLowerCase();
+}
+
 async function getChainBalances(timestamp, chainBlocks, chain) {
   const block = await getBlock(timestamp, chain, chainBlocks);
   const balances = {};
   const transform = await getChainTransform(chain);
 
-  const { coreAddress, startBlock, graphUrl } = ADDRESSES[chain];
+  const { coreAddress, graphUrl } = ADDRESSES[chain];
+
   const query = gql`
-  query get_vaults($block: Int){
+  query get_vaults($block: Int, $coreAddr: String){
     core(
-      id: "0x5D7e616B2c0bf268494A482e315a60814F97dBC8"
+      id: $coreAddr,
       block: {number: $block},
     ) {
       vaults {
         id
-        vaultType
+        type
         token0 {
           id
         }
@@ -40,16 +45,16 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
   }
   `
 
-  const core = await request(
+  const queryResult = await request(
     graphUrl,
     query,
     {
       block: block,
+      coreAddr: addressToId(coreAddress),
     }
   );
 
-  for (const vault of core.vaults) {
-
+  for (const vault of queryResult.core.vaults) {
     const pair = (
       await sdk.api.abi.call({
         chain,
@@ -104,7 +109,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
     );
 
     // Look for MasterChef balance.
-    if (vault.vaultType === 'SUSHI_SWAP') {
+    if (vault.type === 'SUSHI_SWAP') {
       const rewarder = (
         await sdk.api.abi.call({
           chain,
