@@ -26,8 +26,8 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
   const { coreAddress, graphUrl } = NETWORKS[chain];
 
   const query = gql`
-    query get_vaults($block: Int, $coreAddr: String) {
-      core(id: $coreAddr, block: { number: $block }) {
+    query get_vaults($coreAddr: String) {
+      core(id: $coreAddr) {
         vaults {
           id
           type
