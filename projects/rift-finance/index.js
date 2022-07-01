@@ -46,7 +46,6 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
   `;
 
   const queryResult = await request(graphUrl, query, {
-    block: block,
     coreAddr: addressToId(coreAddress),
   });
 
