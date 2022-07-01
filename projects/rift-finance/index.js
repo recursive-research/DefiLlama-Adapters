@@ -51,15 +51,6 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
   });
 
   for (const vault of queryResult.core.vaults) {
-    const pair = (
-      await sdk.api.abi.call({
-        chain,
-        block,
-        target: vault.id,
-        abi: getAbi(riftVaultAbi, "pair"),
-      })
-    ).output;
-
     // Get balances.
     const token0Bal = (
       await sdk.api.abi.call({
@@ -98,7 +89,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
     // Unwrap and add pair balances.
     await unwrapUniswapLPs(
       balances,
-      [{ balance: pairBal, token: pair }],
+      [{ balance: pairBal, token: vault.pair.id }],
       block,
       chain,
       transform
@@ -139,7 +130,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
       // Unwrap and add MasterChef balances.
       await unwrapUniswapLPs(
         balances,
-        [{ balance: masterChefBal, token: pair }],
+        [{ balance: masterChefBal, token: vault.pair.id }],
         block,
         chain,
         transform
