@@ -5,7 +5,7 @@ const { unwrapUniswapLPs } = require("../helper/unwrapLPs");
 const { getChainTransform } = require("../helper/portedTokens");
 const { request, gql } = require("graphql-request");
 
-const ADDRESSES = require("./addresses");
+const NETWORKS = require("./networks");
 
 const riftVaultAbi = require("./abis/riftVaultAbi");
 const masterChefAbi = require("./abis/masterChefAbi");
@@ -23,36 +23,32 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
   const balances = {};
   const transform = await getChainTransform(chain);
 
-  const { coreAddress, graphUrl } = ADDRESSES[chain];
+  const { coreAddress, graphUrl } = NETWORKS[chain];
 
   const query = gql`
-  query get_vaults($block: Int, $coreAddr: String){
-    core(
-      id: $coreAddr,
-      block: {number: $block},
-    ) {
-      vaults {
-        id
-        type
-        token0 {
+    query get_vaults($block: Int, $coreAddr: String) {
+      core(id: $coreAddr, block: { number: $block }) {
+        vaults {
           id
-        }
-        token1 {
-          id
+          type
+          token0 {
+            id
+          }
+          token1 {
+            id
+          }
+          pair {
+            id
+          }
         }
       }
     }
-  }
-  `
+  `;
 
-  const queryResult = await request(
-    graphUrl,
-    query,
-    {
-      block: block,
-      coreAddr: addressToId(coreAddress),
-    }
-  );
+  const queryResult = await request(graphUrl, query, {
+    block: block,
+    coreAddr: addressToId(coreAddress),
+  });
 
   for (const vault of queryResult.core.vaults) {
     const pair = (
@@ -89,7 +85,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
       await sdk.api.abi.call({
         chain,
         block,
-        target: pair,
+        target: vault.pair.id,
         abi: "erc20:balanceOf",
         params: [vault.id],
       })
@@ -109,7 +105,7 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
     );
 
     // Look for MasterChef balance.
-    if (vault.type === 'SUSHI_SWAP') {
+    if (vault.type === "SUSHI_SWAP") {
       const rewarder = (
         await sdk.api.abi.call({
           chain,
@@ -157,7 +153,6 @@ async function getChainBalances(timestamp, chainBlocks, chain) {
 async function aurora(timestamp, block, chainBlocks) {
   return getChainBalances(timestamp, chainBlocks, "aurora");
 }
-
 
 async function ethereum(timestamp, block, chainBlocks) {
   return getChainBalances(timestamp, chainBlocks, "ethereum");
